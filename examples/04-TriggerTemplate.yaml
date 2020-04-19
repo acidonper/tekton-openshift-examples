@@ -1,0 +1,48 @@
+apiVersion: tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+    name: triggertemplate-tekton-cicd-nodejs-app-example
+    namespace: tekton-cicd
+spec:
+    params:
+        - name: git-repo-url
+          description: The git repository url
+        - name: git-revision
+          description: The git revision
+          default: master
+        - name: git-repo-name
+          description: The name of the deployment to be created / patched
+
+    resourcetemplates:
+        - apiVersion: tekton.dev/v1alpha1
+          kind: PipelineResource
+          metadata:
+              name: $(params.git-repo-name)-git-repo-$(uid)
+              namespace: tekton-cicd
+          spec:
+              type: git
+              params:
+                  - name: revision
+                    value: $(params.git-revision)
+                  - name: url
+                    value: $(params.git-repo-url)
+
+        - apiVersion: tekton.dev/v1alpha1
+          kind: PipelineRun
+          metadata:
+              name: build-deploy-$(params.git-repo-name)-$(uid)
+              namespace: tekton-cicd
+          spec:
+              serviceAccountNames:
+                  - taskName: app-test
+                    serviceAccountName: githubsa
+                  - taskName: app-build
+                    serviceAccountName: tekton-cicd-publisher
+                  - taskName: app-deploy
+                    serviceAccountName: tekton-cicd-publisher
+              pipelineRef:
+                  name: pipeline-tekton-cicd-commit-nodejs-app-example
+              resources:
+                  - name: source-repo
+                    resourceRef:
+                        name: $(params.git-repo-name)-git-repo-$(uid)

@@ -1,0 +1,280 @@
+kind: Template
+apiVersion: v1
+metadata:
+    annotations:
+        description: Nodejs app testing and deploy template
+        tags: nodejs-app-tets, nodejs-app-deploy-test
+    name: nodejs-app-tekton-cicd
+message: "Visit your <app_namespace>-cicd project to start working with Tekton (*Rewiew projects Routes to active your repository webhooks)"
+objects:
+    - apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+          name: ${APP_NAME}-publisher
+          namespace: ${APP_NAMESPACE}-cicd
+
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+          name: ${APP_NAME}-publisher:editor
+          namespace: ${APP_NAMESPACE}
+      roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: edit
+      subjects:
+          - kind: ServiceAccount
+            name: ${APP_NAME}-publisher
+            namespace: ${APP_NAMESPACE}-cicd
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: Task
+      metadata:
+          name: task-${APP_NAME}-new-commit-test
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          inputs:
+              resources:
+                  - name: workspace
+                    type: git
+                    targetPath: git-app
+          steps:
+              - name: npm-install
+                image: node
+                command:
+                    - /bin/sh
+                    - -c
+                args:
+                    - npm install
+                workingDir: /workspace/git-app
+
+              - name: npm-test
+                image: node
+                command:
+                    - /bin/sh
+                    - -c
+                args:
+                    - npm run test
+                workingDir: /workspace/git-app
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: Task
+      metadata:
+          name: task-${APP_NAME}-new-commit-start-build
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          inputs:
+              params:
+                  - name: buildconfig
+                    description: The name of the buildconfig
+                    type: string
+                    default: "1"
+                  - name: namespace
+                    description: The name of the namespace
+                    type: string
+                    default: "1"
+          steps:
+              - name: run-new-build
+                image: quay.io/openshift/origin-cli:latest
+                script: |
+                    #!/usr/bin/env bash
+                    oc start-build bc/"$(inputs.params.buildconfig)" -n "$(inputs.params.namespace)" -w
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: Task
+      metadata:
+          name: task-${APP_NAME}-new-commit-deploy-app
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          inputs:
+              params:
+                  - name: deploymentconfig
+                    description: The name of the buildconfig
+                  - name: namespace
+                    description: The name of the namespace
+          steps:
+              - name: rollout-latest-build
+                image: quay.io/openshift/origin-cli:latest
+                script: |
+                    #!/usr/bin/env bash
+                    oc rollout latest dc/"$(inputs.params.deploymentconfig)" -n "$(inputs.params.namespace)"
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: Pipeline
+      metadata:
+          name: pipeline-${APP_NAME}-new-commit-test-and-deploy
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          resources:
+              - name: source-repo
+                type: git
+          params:
+              - name: buildconfig
+                type: string
+                default: "nodejs-app-example"
+              - name: deploymentconfig
+                type: string
+                default: "nodejs-app-example"
+              - name: namespace
+                type: string
+                default: "nodejs-app-example"
+          tasks:
+              - name: app-test
+                taskRef:
+                    name: task-${APP_NAME}-new-commit-test
+                resources:
+                    inputs:
+                        - name: workspace
+                          resource: source-repo
+
+              - name: app-build
+                taskRef:
+                    name: task-${APP_NAME}-new-commit-start-build
+                runAfter:
+                    - app-test
+                params:
+                    - name: buildconfig
+                      value: "$(params.buildconfig)"
+                    - name: namespace
+                      value: "$(params.namespace)"
+
+              - name: app-deploy
+                taskRef:
+                    name: task-${APP_NAME}-new-commit-deploy-app
+                runAfter:
+                    - app-build
+                params:
+                    - name: deploymentconfig
+                      value: "$(params.deploymentconfig)"
+                    - name: namespace
+                      value: "$(params.namespace)"
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: TriggerTemplate
+      metadata:
+          name: triggertemplate-${APP_NAME}-new-commit-test-and-deploy
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          params:
+              - name: git-repo-url
+                description: The git repository url
+              - name: git-revision
+                description: The git revision
+                default: master
+              - name: git-repo-name
+                description: The name of the deployment to be created / patched
+
+          resourcetemplates:
+              - apiVersion: tekton.dev/v1alpha1
+                kind: PipelineResource
+                metadata:
+                    name: $(params.git-repo-name)-git-repo-$(uid)
+                    namespace: ${APP_NAMESPACE}-cicd
+                spec:
+                    type: git
+                    params:
+                        - name: revision
+                          value: $(params.git-revision)
+                        - name: url
+                          value: $(params.git-repo-url)
+
+              - apiVersion: tekton.dev/v1alpha1
+                kind: PipelineRun
+                metadata:
+                    name: build-deploy-$(params.git-repo-name)-$(uid)
+                    namespace: ${APP_NAMESPACE}-cicd
+                spec:
+                    params:
+                        - name: buildconfig
+                          value: "${APP_NAME_BC}"
+                        - name: deploymentconfig
+                          value: "${APP_NAME_DC}"
+                        - name: namespace
+                          value: "${APP_NAMESPACE}"
+                    serviceAccountNames:
+                        - taskName: app-build
+                          serviceAccountName: ${APP_NAME}-publisher
+                        - taskName: app-deploy
+                          serviceAccountName: ${APP_NAME}-publisher
+                    pipelineRef:
+                        name: pipeline-${APP_NAME}-new-commit-test-and-deploy
+                    resources:
+                        - name: source-repo
+                          resourceRef:
+                              name: $(params.git-repo-name)-git-repo-$(uid)
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: TriggerBinding
+      metadata:
+          name: triggerbinding-${APP_NAME}-new-commit-test-and-deploy
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          params:
+              - name: git-repo-url
+                value: $(body.repository.url)
+              - name: git-repo-name
+                value: $(body.repository.name)
+              - name: git-revision
+                value: $(body.head_commit.id)
+
+    - apiVersion: tekton.dev/v1alpha1
+      kind: EventListener
+      metadata:
+          name: eventlistener-${APP_NAME}-new-commit-test-and-deploy
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          serviceAccountName: pipeline
+          triggers:
+              - name: triggerA
+                bindings:
+                    - name: triggerbinding-${APP_NAME}-new-commit-test-and-deploy
+                template:
+                    name: triggertemplate-${APP_NAME}-new-commit-test-and-deploy
+
+    - apiVersion: v1
+      kind: Route
+      metadata:
+          name: el-${APP_NAME}-nctad
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          to:
+              kind: Service
+              name: el-eventlistener-${APP_NAME}-new-commit-test-and-deploy
+          port:
+              targetPort: http-listener
+          tls:
+              termination: edge
+              insecureEdgeTerminationPolicy: Redirect
+              wildcardPolicy: None
+      status: {}
+
+    - apiVersion: v1
+      kind: Route
+      metadata:
+          name: el-${APP_NAME}-nctad-http
+          namespace: ${APP_NAMESPACE}-cicd
+      spec:
+          to:
+              kind: Service
+              name: el-eventlistener-${APP_NAME}-new-commit-test-and-deploy
+          port:
+              targetPort: http-listener
+      status: {}
+
+parameters:
+    - description: NodeJS App Name
+      displayName: NodeJS Application Name
+      name: APP_NAME
+      required: true
+    - description: NodeJS Application BuildConfig Name
+      displayName: NodeJS Application BuildConfig Name
+      name: APP_NAME_BC
+      required: true
+    - description: NodeJS Application DeploymentConfig Name
+      displayName: NodeJS Application DeploymentConfig Name
+      name: APP_NAME_DC
+      required: true
+    - description: NodeJS App namespace
+      displayName: NodeJS Application Namespace
+      name: APP_NAMESPACE
+      required: true

@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: pipeline-tekton-cicd-commit-nodejs-app-example
+  namespace: tekton-cicd
+spec:
+  resources:
+    - name: source-repo
+      type: git
+  params:
+    - name: buildconfig
+      type: string
+      default: "myapp"
+    - name: deploymentconfig
+      type: string
+      default: "myapp"
+    - name: namespace
+      type: string
+      default: "myapp"
+  tasks:
+    - name: app-test
+      taskRef:
+        name: task-tekton-cicd-commit-test
+      resources:
+        inputs:
+          - name: workspace
+            resource: source-repo
+
+    - name: app-build
+      taskRef:
+        name: task-tekton-cicd-commit-deploy
+      runAfter:
+        - app-test
+      params:
+        - name: buildconfig
+          value: "$(params.buildconfig)"
+        - name: namespace
+          value: "$(params.namespace)"
+
+    - name: app-deploy
+      taskRef:
+        name: task-tekton-cicd-application-deploy
+      runAfter:
+        - app-build
+      params:
+        - name: deploymentconfig
+          value: "$(params.deploymentconfig)"
+        - name: namespace
+          value: "$(params.namespace)
+"

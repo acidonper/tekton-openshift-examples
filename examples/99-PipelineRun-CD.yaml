@@ -1,0 +1,26 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineRun
+metadata:
+  name: pipeline-linkingapp-commit-test-chat-pro-064
+  namespace: linkingapp-cicd
+spec:
+  params:
+    - name: buildconfig
+      value: "linking-app-chat"
+    - name: deploymentconfig
+      value: "linking-app-chat"
+    - name: namespace
+      value: "linkingapp"
+  serviceAccountNames:
+    - taskName: app-test
+      serviceAccountName: githubsa
+    - taskName: app-build
+      serviceAccountName: linkingapp-publisher
+    - taskName: app-deploy
+      serviceAccountName: linkingapp-publisher
+  pipelineRef:
+    name: pipeline-linking-app-commit-test-chat-pro-test
+  resources:
+    - name: source-repo
+      resourceRef:
+        name: git-linking-app-chat

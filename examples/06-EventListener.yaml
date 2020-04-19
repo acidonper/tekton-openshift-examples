@@ -1,0 +1,30 @@
+apiVersion: tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+    name: eventlistener-tekton-cicd-nodejs-app-example
+    namespace: tekton-cicd
+spec:
+    serviceAccountName: pipeline
+    triggers:
+        - bindings:
+              - name: triggerbinding-tekton-cicd-commit
+          template:
+              name: triggertemplate-tekton-cicd-nodejs-app-example
+
+---
+apiVersion: v1
+kind: Route
+metadata:
+    name: eventlistener-tekton-cicd-nodejs-app-example
+    namespace: tekton-cicd
+spec:
+    to:
+        kind: Service
+        name: el-eventlistener-tekton-cicd-nodejs-app-example
+    port:
+        targetPort: http-listener
+    tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+        wildcardPolicy: None
+status: {}

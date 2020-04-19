@@ -1,0 +1,73 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+    name: task-tekton-cicd-commit-test
+    namespace: tekton-cicd
+spec:
+    inputs:
+        resources:
+            - name: workspace
+              type: git
+              targetPath: git-tekton-cicd
+    steps:
+        - name: npm-install
+          image: node
+          command:
+              - /bin/sh
+              - -c
+          args:
+              - npm install
+          workingDir: /workspace/git-tekton-cicd
+
+        - name: npm-test
+          image: node
+          command:
+              - /bin/sh
+              - -c
+          args:
+              - npm run test
+          workingDir: /workspace/git-tekton-cicd
+
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+    name: task-tekton-cicd-commit-deploy
+    namespace: tekton-cicd
+spec:
+    inputs:
+        params:
+            - name: buildconfig
+              description: The name of the buildconfig
+              type: string
+              default: "myapp"
+            - name: namespace
+              description: The name of the namespace
+              type: string
+              default: "myapp"
+    steps:
+        - name: run-new-build
+          image: quay.io/openshift/origin-cli:latest
+          script: |
+              #!/usr/bin/env bash
+              oc start-build bc/"$(inputs.params.buildconfig)" -n "$(inputs.params.namespace)" -w
+
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+    name: task-tekton-cicd-application-deploy
+    namespace: tekton-cicd
+spec:
+    inputs:
+        params:
+            - name: deploymentconfig
+              description: The name of the buildconfig
+            - name: namespace
+              description: The name of the namespace
+    steps:
+        - name: rollout-latest-build
+          image: quay.io/openshift/origin-cli:latest
+          script: |
+              #!/usr/bin/env bash
+              oc rollout latest dc/"$(inputs.params.deploymentconfig)" -n "$(inputs.params.namespace)"
