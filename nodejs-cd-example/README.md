@@ -1,13 +1,19 @@
 # NodeJS Example App Continuous Deployment
 
+This repository has been created with the mission of giving a general Tekton objects and pipelines implementation overview. It is important to bear in mind that an objective of introduction in Tekton components is pursued. Please, review [Tekton basics](../README.md) if you have not took at look at it so thus far.
+
+As an example, the following laboratory implements a continuous deployment workflow in an Openshift Application based on Tekton technology.
+
 ## NodeJS App Example Deployment
 
-Firstly, an application running is required in order implement its continuous deployment and a couple of projects in Openshift. For this reason, it is required to complete the following steps:
+Firstly, an application running is required in order implement its continuous deployment. A part of the application, it will be required some OpenShift resources in order to integrate all Tekton Objects.
+
+The following list includes a set of steps to set up a sample NodeJS application. Please, follow this procedure for taking the first steps :
 
 -   Create Openshift projects
 
 ```
-$ oc login -u user -p password https://console-openshift-console.example.com
+$ oc login -u user -p password https://console-openshift-console.apps.example.com
 $ oc new-project nodejs-app-example
 $ oc new-project nodejs-app-example-cicd
 ```
@@ -18,8 +24,7 @@ $ oc new-project nodejs-app-example-cicd
 $ git clone https://github.com/acidonper/nodejs-app-example.git
 ```
 
--   Deploy the application in Openshift (Please, visit [NodeJS App Example Repository](https://github.com/acidonper/nodejs-app-example) and Please, visit [Deploy NodeJS App Example in Openshift ](./.openshift/README.md) for more information about App deployment in Openshift.
-    for more information)
+-   Deploy _NodeJS App Example_ in Openshift (Please, visit [Deploy NodeJS App Example in Openshift ](https://github.com/acidonper/nodejs-app-example/tree/master/.openshift) for more information about this App deployment in Openshift)
 
 ```
 $ cd nodejs-app-example/.openshift
@@ -28,9 +33,9 @@ $ sh openshift-nodejs-app-example.sh nodejs-app-example
 
 ### Test Application
 
-In order to test the new app, it is required to perform the following steps:
+Once the procedure has been executed and _NodeJS App Example_ objects have been created in Openshift, it would be a good idea to perform the following steps in order to test the new deployed App's status:
 
--   Check App Pod is running
+-   Check the App's Pod is running
 
 ```
 $ oc get pods -n nodejs-app-example
@@ -39,7 +44,7 @@ nodejs-app-example-1-92jnr    1/1     Running     0          28m
 ...
 ```
 
--   Check ImageStream build is working
+-   Check the App's ImageStream has been built
 
 ```
 $ oc get is -n nodejs-app-example
@@ -47,7 +52,7 @@ NAME                 IMAGE REPOSITORY                                           
 nodejs-app-example   default-route-openshift-image-registry.apps-crc.testing/nodejs-app-example/nodejs-app-example   latest   26 minutes ago
 ```
 
--   Check App route
+-   Check the App's route
 
 ```
 $ oc get route -n nodejs-app-example
@@ -56,7 +61,7 @@ $ curl <route>
 
 ## Continuous Deployment procedure implementation (Tekton)
 
-The following section tries to give an example about continuous deployment workflow implementation in Openshift based on Tekton. From a general point of view, in a complete CD Tekton automated procedure will be necessary to have involved the following objects:
+From a general point of view, in a complete CD Tekton automated procedure will be necessary to have involved the following objects:
 
 -   A service account to generate Tekton objects automatically (\*Created by default -> "pipeline")
 -   A service account responsible for start new app builds and deployments
@@ -66,7 +71,9 @@ The following section tries to give an example about continuous deployment workf
 -   A Trigger Binding which captures events parameters (git commit ID)
 -   An Event listener to capture commits/push events from the repository and trigger Tekton automatized procedure
 
-In order to create these resources from an easy way, a template will be applied:
+In this laboratory, an Openshift template has been designed in order to create the previous described objects in an easy way automatically. In any case, it is a good idea to review this template carefully to identify these objects, test API versions, discover relations between them, etc.
+
+Once the Openshift template has been reviewed, it is required to perform the following procedure:
 
 ```
 $ cd nodejs-cd-example
@@ -75,20 +82,20 @@ $ oc process -f nodejs-app-tekton-cicd.yaml -p APP_NAME=nodejs-app-example APP_N
 
 ### Check Tekton Objects
 
-Template application would have added some new tekton objects in `<app>-cicd` project. In order to be check these new objects, it is required to follow the procedure included in this section:
+Template application would have added some new tekton objects in `<app>-cicd` project. In order to be able to check these new objects, it is required to follow the procedure included in this section:
 
--   Check Tekton objects POD is running
+-   Check new Tekton objects
 
 ```
-$ oc project  nodejs-app-example-cicd
+$ oc project nodejs-app-example-cicd
 
-$ tkn tasks list
+$ tkn tasks ls
 NAME                                             AGE
 task-nodejs-app-example-new-commit-deploy-app    12 minutes ago
 task-nodejs-app-example-new-commit-start-build   12 minutes ago
 task-nodejs-app-example-new-commit-test          12 minutes ago
 
-$ tkn pipeline list
+$ tkn pipeline ls
 NAME                                                     AGE              LAST RUN   STARTED   DURATION   STATUS
 pipeline-nodejs-app-example-new-commit-test-and-deploy   13 minutes ago   ---        ---       ---        ---
 
@@ -100,13 +107,13 @@ $ tkn triggerbinding ls
 NAME                                                           AGE
 triggerbinding-nodejs-app-example-new-commit-test-and-deploy   13 minutes ago
 
-$ tkn eventlistener list
+$ tkn eventlistener ls
 NAME                                                          AGE
 eventlistener-nodejs-app-example-new-commit-test-and-deploy   7 minutes ago
 
 ```
 
--   Check EventListener POD is running and obtain its route
+-   Check EventListener's Pod is running and get its route
 
 ```
 $ oc get pods -n nodejs-app-example-cicd
@@ -121,10 +128,9 @@ el-nodejs-app-example-nctad        el-nodejs-app-example-nctad-nodejs-app-exampl
 
 ## Push a new commit
 
-Once all above steps have been performed, it is time to trigger a new push event in order to test that EvenListener will trigger a new procedure in order to test and deploy this new app version.
+Once all above steps have been performed, it is time to trigger a new push event in order to test the EvenListener operation. It is important to remember that EventListener triggers a new pipeline execution in reaction to events.
 
-If OpenShift cluster is accessible from Internet, it is possible to generate a push/commit event through git command and test the result. In order to add a new repository webhook, please visit the following link [Creating Webhooks
-](https://developer.github.com/webhooks/creating/).
+If OpenShift cluster is accessible from Internet, it is possible to generate a push/commit events through git command and test the results. In order to add a new repository webhook, please visit the following link [Creating Webhooks](https://developer.github.com/webhooks/creating/).
 
 ### Emulate a new commit
 
@@ -148,9 +154,9 @@ $ curl -X POST -k \
 
 ### Result
 
-As a result, a new build and deployment have been triggered by Tekton. In order to review these events state, it is required to follow next steps:
+As a result, a new build and deployment instances have been triggered by Tekton. In order to review these events state, it is required to follow next steps:
 
--   Check EventListener logs
+-   Check EventListener's Pod logs
 
 ```
 $ oc get pods -n nodejs-app-example-cicd
@@ -194,14 +200,14 @@ nodejs-app-example   default-route-openshift-image-registry.apps-crc.testing/nod
 
 ## Nice to have
 
-This repository implements a basic Continuous Deployment workflow in Tekton. The following list talks about features which will be nice to have in production workflow:
+This repository implements a basic Continuous Deployment workflow in Tekton. The following list talks about features which will be nice to have in production workflows:
 
--   Code quality metrics
 -   EventListener security through secret and interceptors (Please visit [interceptor](https://github.com/tektoncd/triggers/blob/master/docs/eventlisteners.md#interceptors) for more information)
+-   Multi-environment implementation (Dev, Pre, Pro...)
 -   Continuous Integration workflows
 -   Initial Deployments workflows
 -   Pull request approval workflows
--   Multi-environment implementation (Dev, Pre, Pro...)
+-   Code quality metrics
 
 ## License
 
